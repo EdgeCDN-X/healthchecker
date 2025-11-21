@@ -94,8 +94,7 @@ func (l *LocationManager) LocationKey(namespace string, name string) string {
 }
 
 func (l *LocationManager) AddLocation(location *infrastructurev1alpha1.Location) {
-
-	marshalled, err := json.Marshal(location)
+	marshalled, err := json.Marshal(location.Spec)
 	if err != nil {
 		return
 	}
@@ -156,23 +155,27 @@ func (l *LocationManager) loop() {
 				for _, node := range nodeGroup.Nodes {
 					if node.Ipv4 != "" {
 						l.nodeManagers[op.key].nodes[l.nodeManagers[op.key].NodeKey(&node, 4)] = &NodeCheck{
-							IP:       net.ParseIP(node.Ipv4),
-							Port:     80,
-							Path:     "/healthz",
-							Protocol: "http",
-							Interval: 10 * time.Second,
-							Timeout:  3 * time.Second,
+							Name:      node.Name,
+							Condition: infrastructurev1alpha1.IPV4HealthCheckSuccessful,
+							IP:        net.ParseIP(node.Ipv4),
+							Port:      80,
+							Path:      "/healthz",
+							Protocol:  "http",
+							Interval:  10 * time.Second,
+							Timeout:   3 * time.Second,
 						}
 						l.nodeManagers[op.key].StartHealthChecks(l.nodeManagers[op.key].NodeKey(&node, 4))
 					}
 					if node.Ipv6 != "" {
 						l.nodeManagers[op.key].nodes[l.nodeManagers[op.key].NodeKey(&node, 6)] = &NodeCheck{
-							IP:       net.ParseIP(node.Ipv6),
-							Port:     80,
-							Path:     "/healthz",
-							Protocol: "http",
-							Interval: 10 * time.Second,
-							Timeout:  3 * time.Second,
+							Name:      node.Name,
+							Condition: infrastructurev1alpha1.IPV6HealthCheckSuccessful,
+							IP:        net.ParseIP(node.Ipv6),
+							Port:      80,
+							Path:      "/healthz",
+							Protocol:  "http",
+							Interval:  10 * time.Second,
+							Timeout:   3 * time.Second,
 						}
 						l.nodeManagers[op.key].StartHealthChecks(l.nodeManagers[op.key].NodeKey(&node, 6))
 					}

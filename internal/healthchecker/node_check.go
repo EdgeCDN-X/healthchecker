@@ -5,15 +5,19 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	infrastructurev1alpha1 "github.com/EdgeCDN-X/edgecdnx-controller/api/v1alpha1"
 )
 
 type NodeCheck struct {
-	IP       net.IP
-	Port     uint16
-	Path     string
-	Protocol string
-	Timeout  time.Duration
-	Interval time.Duration
+	Name      string
+	Condition infrastructurev1alpha1.NodeConditionType
+	IP        net.IP
+	Port      uint16
+	Path      string
+	Protocol  string
+	Timeout   time.Duration
+	Interval  time.Duration
 
 	Alive          bool
 	LastRetCode    int
