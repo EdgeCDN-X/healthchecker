@@ -1,3 +1,5 @@
+github.com/EdgeCDN-X/edgecdnx-controller v0.11.0 h1:K9j0RjWZi3i5xdQwjbYvX1PjzA5JFiq3SFrqo/8gi4s=
+github.com/EdgeCDN-X/edgecdnx-controller v0.11.0/go.mod h1:TYJ49yGCUgJS83tUF5+HMyiBakBkcAHuF6qHmvO6rOQ=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
