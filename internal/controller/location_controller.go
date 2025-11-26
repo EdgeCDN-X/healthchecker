@@ -4,6 +4,7 @@ import (
 	"context"
 
 	infrastructurev1alpha1 "github.com/EdgeCDN-X/edgecdnx-controller/api/v1alpha1"
+
 	"github.com/EdgeCDN-X/healthchecker.git/internal/healthchecker"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,8 +32,10 @@ func (r *LocationHealthcheckController) Reconcile(ctx context.Context, req ctrl.
 			return ctrl.Result{}, nil
 		}
 		log.Error(err, "unable to fetch Location")
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		return ctrl.Result{}, err
 	}
+
+	log.V(1).Info("Reconciling Location", "version", loc.ObjectMeta.ResourceVersion)
 
 	if loc.DeletionTimestamp != nil {
 		log.Info("Location is being deleted. Removing location from registry")
@@ -40,16 +43,20 @@ func (r *LocationHealthcheckController) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, nil
 	}
 
-	r.LocationManager.AddLocation(loc)
-	log.Info("Location added/updated in registry", "location", req.NamespacedName)
+	if loc.Status.Status == "Healthy" {
+		r.LocationManager.AddLocation(loc)
+		log.Info("Location added/updated in registry", "location", req.NamespacedName)
+	} else {
+		r.LocationManager.RemoveLocation(req.NamespacedName)
+		log.Info("Location not healthy. Removed from registry", "location", req.NamespacedName)
+	}
 
 	return ctrl.Result{}, nil
 }
 
-func (r *LocationHealthcheckController) HandleChangeFunc(node *healthchecker.NodeCheck, location *infrastructurev1alpha1.Location, oldCode, newCode int) {
+func (r *LocationHealthcheckController) HandleChangeFunc(nodeCheckList *healthchecker.NodeCheckList, location *infrastructurev1alpha1.Location, oldCode, newCode int) {
 	logf.Log.Info("Health check status changed",
-		"condition", node.Condition,
-		"nodeName", node.Name,
+		"checks", nodeCheckList.Checks,
 		"location", location.Name,
 		"oldCode", oldCode,
 		"newCode", newCode,
@@ -61,46 +68,36 @@ func (r *LocationHealthcheckController) HandleChangeFunc(node *healthchecker.Nod
 		logf.Log.Error(err, "unable to fetch Location for handling health check change", "location", location.Name)
 		return
 	}
+	logf.Log.V(1).Info("Fetched Location Info", "name", loc.Name, "namespace", loc.Namespace, "observerGeneration", loc.ObjectMeta.Generation, "ResourceVersion", loc.ObjectMeta.ResourceVersion)
 
-	nodeInstanceStatus, nodeExists := loc.Status.NodeStatus[node.Name]
+	conditions := make([]infrastructurev1alpha1.NodeCondition, 0)
+	for _, nc := range nodeCheckList.Checks {
+		time := metav1.Now()
+		condition := infrastructurev1alpha1.NodeCondition{
+			Type:               nc.Condition,
+			Status:             nc.Alive,
+			Reason:             nc.LastRetMessage,
+			LastTransitionTime: time,
+			ObservedGeneration: location.Generation,
+		}
 
-	newNC := infrastructurev1alpha1.NodeCondition{
-		Type:               node.Condition,
-		Status:             node.Alive,
-		Reason:             node.LastRetMessage,
-		LastTransitionTime: metav1.Now(),
-		ObservedGeneration: location.Generation,
+		conditions = append(conditions, condition)
+	}
+	newLoc := loc.DeepCopy()
+
+	if newLoc.Status.NodeStatus == nil {
+		newLoc.Status.NodeStatus = make(map[string]infrastructurev1alpha1.NodeInstanceStatus)
 	}
 
-	if nodeExists {
-		conditionExists := false
-		for i, condition := range nodeInstanceStatus.Conditions {
-			if condition.Type == node.Condition {
-				conditionExists = true
-				nodeInstanceStatus.Conditions[i] = newNC
-				break
-			}
-		}
-		if !conditionExists {
-			nodeInstanceStatus.Conditions = append(nodeInstanceStatus.Conditions, newNC)
-		}
-	} else {
-		nodeInstanceStatus = infrastructurev1alpha1.NodeInstanceStatus{
-			Conditions: []infrastructurev1alpha1.NodeCondition{
-				newNC,
-			},
-		}
+	newLoc.Status.NodeStatus[nodeCheckList.Name] = infrastructurev1alpha1.NodeInstanceStatus{
+		Conditions: conditions,
 	}
 
-	if loc.Status.NodeStatus == nil {
-		loc.Status.NodeStatus = make(map[string]infrastructurev1alpha1.NodeInstanceStatus)
-	}
+	err = r.Status().Patch(context.Background(), newLoc, client.MergeFrom(loc))
 
-	loc.Status.NodeStatus[node.Name] = nodeInstanceStatus
-
-	err = r.Status().Update(context.Background(), loc)
 	if err != nil {
-		logf.Log.Error(err, "unable to update Location status after health check change", "location", location.Name)
+		logf.Log.Error(err, "unable to patch Location status after health check change", "location", location.Name)
+		logf.Log.Info("Last Fetched Location Info", "name", loc.Name, "namespace", loc.Namespace, "observerGeneration", loc.ObjectMeta.Generation, "ResourceVersion", loc.ObjectMeta.ResourceVersion)
 		return
 	}
 
@@ -108,7 +105,6 @@ func (r *LocationHealthcheckController) HandleChangeFunc(node *healthchecker.Nod
 }
 
 func (r *LocationHealthcheckController) HandleSpecChange(location *infrastructurev1alpha1.Location) {
-	// TODO perhaps clean up old / new nodes
 	logf.Log.Info("Location spec changed",
 		"location", location.Name,
 	)
@@ -119,6 +115,35 @@ func (r *LocationHealthcheckController) HandleSpecChange(location *infrastructur
 		logf.Log.Error(err, "unable to fetch Location for handling spec change", "location", location.Name)
 		return
 	}
+
+	deletables := make([]string, 0)
+	for nodeName := range loc.Status.NodeStatus {
+		found := false
+
+		for _, nodeGroup := range location.Spec.NodeGroups {
+			for _, nodeSpec := range nodeGroup.Nodes {
+				if nodeSpec.Name == nodeName {
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+
+		if !found {
+			deletables = append(deletables, nodeName)
+		}
+	}
+
+	newLoc := loc.DeepCopy()
+	for _, delNode := range deletables {
+		logf.Log.Info("Removing node status for deleted node", "location", location.Name, "node", delNode)
+		delete(newLoc.Status.NodeStatus, delNode)
+	}
+
+	err = r.Status().Patch(context.Background(), newLoc, client.MergeFrom(loc))
 }
 
 func (r *LocationHealthcheckController) SetupWithManager(mgr ctrl.Manager) error {
