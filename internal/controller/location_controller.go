@@ -19,6 +19,7 @@ type LocationHealthcheckController struct {
 	client.Client
 	Scheme          *runtime.Scheme
 	LocationManager *healthchecker.LocationManager
+	Prometheus      healthchecker.PrometheusConfig
 }
 
 func (r *LocationHealthcheckController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -88,9 +89,11 @@ func (r *LocationHealthcheckController) HandleChangeFunc(nodeCheckList *healthch
 	if newLoc.Status.NodeStatus == nil {
 		newLoc.Status.NodeStatus = make(map[string]infrastructurev1alpha1.NodeInstanceStatus)
 	}
+	current := newLoc.Status.NodeStatus[nodeCheckList.Name]
 
 	newLoc.Status.NodeStatus[nodeCheckList.Name] = infrastructurev1alpha1.NodeInstanceStatus{
 		Conditions: conditions,
+		Alerts:     current.Alerts,
 	}
 
 	err = r.Status().Patch(context.Background(), newLoc, client.MergeFrom(loc))
@@ -102,6 +105,32 @@ func (r *LocationHealthcheckController) HandleChangeFunc(nodeCheckList *healthch
 	}
 
 	return
+}
+
+func (r *LocationHealthcheckController) HandleAlertChangeFunc(location *infrastructurev1alpha1.Location, locationAlerts []infrastructurev1alpha1.PrometheusAlertStatus, nodeAlerts map[string][]infrastructurev1alpha1.PrometheusAlertStatus) {
+	loc := &infrastructurev1alpha1.Location{}
+	err := r.Get(context.Background(), client.ObjectKey{Namespace: location.Namespace, Name: location.Name}, loc)
+	if err != nil {
+		logf.Log.Error(err, "unable to fetch Location for handling alert change", "location", location.Name)
+		return
+	}
+
+	newLoc := loc.DeepCopy()
+	newLoc.Status.Alerts = stampTransitionTime(locationAlerts)
+
+	if newLoc.Status.NodeStatus == nil {
+		newLoc.Status.NodeStatus = make(map[string]infrastructurev1alpha1.NodeInstanceStatus)
+	}
+
+	for nodeKey, alerts := range nodeAlerts {
+		status := newLoc.Status.NodeStatus[nodeKey]
+		status.Alerts = stampTransitionTime(alerts)
+		newLoc.Status.NodeStatus[nodeKey] = status
+	}
+
+	if err := r.Status().Patch(context.Background(), newLoc, client.MergeFrom(loc)); err != nil {
+		logf.Log.Error(err, "unable to patch Location status after alert change", "location", location.Name)
+	}
 }
 
 func (r *LocationHealthcheckController) HandleSpecChange(location *infrastructurev1alpha1.Location) {
@@ -116,41 +145,95 @@ func (r *LocationHealthcheckController) HandleSpecChange(location *infrastructur
 		return
 	}
 
-	deletables := make([]string, 0)
-	for nodeName := range loc.Status.NodeStatus {
-		found := false
-
-		for _, nodeGroup := range location.Spec.NodeGroups {
-			for _, nodeSpec := range nodeGroup.Nodes {
-				if nodeSpec.Name == nodeName {
-					found = true
-					break
-				}
-			}
-			if found {
-				break
-			}
-		}
-
-		if !found {
-			deletables = append(deletables, nodeName)
-		}
-	}
-
 	newLoc := loc.DeepCopy()
-	for _, delNode := range deletables {
-		logf.Log.Info("Removing node status for deleted node", "location", location.Name, "node", delNode)
-		delete(newLoc.Status.NodeStatus, delNode)
+	defs := buildNodeAlertDefinitions(location)
+
+	newLoc.Status.Alerts = filterStatusAlertsBySpec(newLoc.Status.Alerts, location.Spec.Alerts)
+
+	for nodeKey, nodeStatus := range newLoc.Status.NodeStatus {
+		matchers, found := defs[nodeKey]
+		if !found {
+			logf.Log.Info("Removing node status for deleted node", "location", location.Name, "node", nodeKey)
+			delete(newLoc.Status.NodeStatus, nodeKey)
+			continue
+		}
+
+		nodeStatus.Alerts = filterStatusAlertsBySpec(nodeStatus.Alerts, matchers)
+		newLoc.Status.NodeStatus[nodeKey] = nodeStatus
 	}
 
 	err = r.Status().Patch(context.Background(), newLoc, client.MergeFrom(loc))
 }
 
 func (r *LocationHealthcheckController) SetupWithManager(mgr ctrl.Manager) error {
-	locationManager := healthchecker.NewLocationManager(r.HandleChangeFunc, r.HandleSpecChange)
+	promManager, err := healthchecker.NewPrometheusManager(r.Prometheus, r.HandleAlertChangeFunc)
+	if err != nil {
+		return err
+	}
+
+	locationManager := healthchecker.NewLocationManager(r.HandleChangeFunc, r.HandleSpecChange, promManager)
 	r.LocationManager = locationManager
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&infrastructurev1alpha1.Location{}).
 		Complete(r)
+}
+
+func buildNodeAlertDefinitions(location *infrastructurev1alpha1.Location) map[string][]infrastructurev1alpha1.PrometheusAlertMatcherSpec {
+	defs := make(map[string][]infrastructurev1alpha1.PrometheusAlertMatcherSpec)
+	for _, node := range location.Spec.Nodes {
+		defs[node.Name] = node.Alerts
+	}
+
+	for _, nodeGroup := range location.Spec.NodeGroups {
+		for _, node := range nodeGroup.Nodes {
+			defs[node.Name] = node.Alerts
+		}
+	}
+
+	return defs
+}
+
+func filterStatusAlertsBySpec(statuses []infrastructurev1alpha1.PrometheusAlertStatus, matchers []infrastructurev1alpha1.PrometheusAlertMatcherSpec) []infrastructurev1alpha1.PrometheusAlertStatus {
+	if len(matchers) == 0 {
+		return nil
+	}
+
+	filtered := make([]infrastructurev1alpha1.PrometheusAlertStatus, 0, len(statuses))
+	for _, status := range statuses {
+		for _, matcher := range matchers {
+			if status.AlertName != matcher.AlertName {
+				continue
+			}
+			if !labelsMatch(matcher.Labels, status.Labels) {
+				continue
+			}
+
+			filtered = append(filtered, status)
+			break
+		}
+	}
+
+	return filtered
+}
+
+func labelsMatch(selector map[string]string, labels map[string]string) bool {
+	for key, expected := range selector {
+		if labels[key] != expected {
+			return false
+		}
+	}
+
+	return true
+}
+
+func stampTransitionTime(statuses []infrastructurev1alpha1.PrometheusAlertStatus) []infrastructurev1alpha1.PrometheusAlertStatus {
+	now := metav1.Now()
+	stamped := make([]infrastructurev1alpha1.PrometheusAlertStatus, 0, len(statuses))
+	for _, status := range statuses {
+		copyStatus := status
+		copyStatus.LastTransitionTime = now
+		stamped = append(stamped, copyStatus)
+	}
+	return stamped
 }

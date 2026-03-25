@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +24,7 @@ type locationManagerOps struct {
 
 type LocationManager struct {
 	nodeManagers   map[string]*NodeManager
+	promManager    *PrometheusManager
 	changeFunc     func(nodeCheckList *NodeCheckList, location *infrastructurev1alpha1.Location, oldCode, newCode int)
 	specChangeFunc func(location *infrastructurev1alpha1.Location)
 	mu             sync.Mutex
@@ -64,6 +66,9 @@ func (l *LocationManager) loop() {
 		case "add":
 			l.mu.Lock()
 			logf.Log.Info("Processing add operation for location", "location", op.key)
+			if l.promManager != nil {
+				l.promManager.AddLocation(op.location)
+			}
 			nm, exists := l.nodeManagers[op.key]
 			if exists {
 				if nm.locationHash == op.hash {
@@ -135,6 +140,9 @@ func (l *LocationManager) loop() {
 		case "remove":
 			l.mu.Lock()
 			logf.Log.Info("Processing remove operation for location", "location", op.key)
+			if l.promManager != nil {
+				l.promManager.RemoveLocation(parseLocationKey(op.key))
+			}
 
 			for key, nm := range l.nodeManagers {
 				logf.Log.Info("Current managed location", "location", key, "nodes", len(nm.nodeCheckList))
@@ -173,9 +181,10 @@ func (l *LocationManager) loop() {
 	}
 }
 
-func NewLocationManager(changeFn func(nodeCheckList *NodeCheckList, location *infrastructurev1alpha1.Location, oldCode, newCode int), specChangeFunc func(location *infrastructurev1alpha1.Location)) *LocationManager {
+func NewLocationManager(changeFn func(nodeCheckList *NodeCheckList, location *infrastructurev1alpha1.Location, oldCode, newCode int), specChangeFunc func(location *infrastructurev1alpha1.Location), promManager *PrometheusManager) *LocationManager {
 	lm := &LocationManager{
 		nodeManagers:   make(map[string]*NodeManager),
+		promManager:    promManager,
 		opsCh:          make(chan locationManagerOps, 100),
 		closed:         false,
 		changeFunc:     changeFn,
@@ -185,4 +194,12 @@ func NewLocationManager(changeFn func(nodeCheckList *NodeCheckList, location *in
 
 	go lm.loop()
 	return lm
+}
+
+func parseLocationKey(key string) types.NamespacedName {
+	parts := strings.SplitN(key, "/", 2)
+	if len(parts) != 2 {
+		return types.NamespacedName{}
+	}
+	return types.NamespacedName{Namespace: parts[0], Name: parts[1]}
 }
