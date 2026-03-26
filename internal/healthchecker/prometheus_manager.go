@@ -137,6 +137,7 @@ func (p *PrometheusManager) syncOnce() error {
 	if err != nil {
 		return err
 	}
+	logf.Log.V(1).Info("Fetched firing Prometheus alerts", "count", len(alerts))
 
 	p.mu.RLock()
 	locations := make(map[string]*infrastructurev1alpha1.Location, len(p.locations))
@@ -144,6 +145,7 @@ func (p *PrometheusManager) syncOnce() error {
 		locations[key] = loc.DeepCopy()
 	}
 	p.mu.RUnlock()
+	logf.Log.V(1).Info("Evaluating Prometheus alerts for locations", "count", len(locations))
 
 	for key, location := range locations {
 		locationAlerts, nodeAlerts := evaluateLocationAlerts(location, alerts)
@@ -161,10 +163,13 @@ func (p *PrometheusManager) syncOnce() error {
 		oldHash := p.lastHashes[key]
 		if oldHash == hash {
 			p.mu.Unlock()
+			logf.Log.V(1).Info("Prometheus alert state unchanged for location", "location", key, "locationAlerts", len(locationAlerts), "nodeAlerts", len(nodeAlerts))
 			continue
 		}
 		p.lastHashes[key] = hash
 		p.mu.Unlock()
+
+		logf.Log.V(1).Info("Prometheus alert state changed for location", "location", key, "locationAlerts", len(locationAlerts), "nodeAlerts", len(nodeAlerts))
 
 		p.alertChangeFunc(location, locationAlerts, nodeAlerts)
 	}
