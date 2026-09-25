@@ -10,10 +10,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 )
+
+const healthCheckProfileIndexKey = ".spec.nodeGroups.healthCheck"
 
 type LocationHealthcheckController struct {
 	client.Client
@@ -44,13 +49,28 @@ func (r *LocationHealthcheckController) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, nil
 	}
 
-	if loc.Status.Status == "Healthy" {
-		r.LocationManager.AddLocation(loc)
-		log.Info("Location added/updated in registry", "location", req.NamespacedName)
-	} else {
-		r.LocationManager.RemoveLocation(req.NamespacedName)
-		log.Info("Location not healthy. Removed from registry", "location", req.NamespacedName)
+	// if loc.Status.Status == "Healthy" {
+	referencedHcps := make([]infrastructurev1alpha1.HealthCheckProfile, 0)
+	for _, nodeGroup := range loc.Spec.NodeGroups {
+		if nodeGroup.HealthCheck == nil {
+			continue
+		}
+		hcp := &infrastructurev1alpha1.HealthCheckProfile{}
+
+		log.Info("Fetching HealthCheckProfile for node group", "nodeGroup", nodeGroup.Name, "healthCheckProfile", nodeGroup.HealthCheck.Name)
+
+		err := r.Client.Get(ctx, client.ObjectKey{Namespace: loc.Namespace, Name: nodeGroup.HealthCheck.Name}, hcp)
+		if err == nil {
+			referencedHcps = append(referencedHcps, *hcp)
+		}
 	}
+
+	r.LocationManager.AddLocation(loc, &referencedHcps)
+	log.Info("Location added/updated in registry", "location", req.NamespacedName)
+	// } else {
+	// 	r.LocationManager.RemoveLocation(req.NamespacedName)
+	// 	log.Info("Location not healthy. Removed from registry", "location", req.NamespacedName)
+	// }
 
 	return ctrl.Result{}, nil
 }
@@ -75,7 +95,9 @@ func (r *LocationHealthcheckController) HandleChangeFunc(nodeCheckList *healthch
 	for _, nc := range nodeCheckList.Checks {
 		time := metav1.Now()
 		condition := infrastructurev1alpha1.NodeCondition{
-			Type:               nc.Condition,
+			Type:               infrastructurev1alpha1.HealthCheckSuccessful,
+			Stack:              nc.Stack,
+			HealthCheckKey:     nc.Name,
 			Status:             nc.Alive,
 			Reason:             nc.LastRetMessage,
 			LastTransitionTime: time,
@@ -174,9 +196,68 @@ func (r *LocationHealthcheckController) SetupWithManager(mgr ctrl.Manager) error
 	locationManager := healthchecker.NewLocationManager(r.HandleChangeFunc, r.HandleSpecChange, promManager)
 	r.LocationManager = locationManager
 
+	err = mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&infrastructurev1alpha1.Location{},
+		healthCheckProfileIndexKey,
+		func(obj client.Object) []string {
+			location := obj.(*infrastructurev1alpha1.Location)
+			hcprofileSet := make(map[string]struct{})
+
+			for _, ng := range location.Spec.NodeGroups {
+				if ng.HealthCheck != nil {
+					hcprofileSet[ng.HealthCheck.Name] = struct{}{}
+				}
+			}
+
+			keys := make([]string, 0, len(hcprofileSet))
+			for key := range hcprofileSet {
+				keys = append(keys, key)
+			}
+			return keys
+		},
+	)
+
+	if err != nil {
+		return err
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&infrastructurev1alpha1.Location{}).
+		Watches(
+			&infrastructurev1alpha1.HealthCheckProfile{},
+			handler.EnqueueRequestsFromMapFunc(r.mapHealthCheckProfileToLocations),
+		).
 		Complete(r)
+}
+
+func (r *LocationHealthcheckController) mapHealthCheckProfileToLocations(ctx context.Context, obj client.Object) []reconcile.Request {
+	logger := log.FromContext(ctx)
+
+	profileName := obj.GetName()
+
+	var locationList infrastructurev1alpha1.LocationList
+
+	err := r.Client.List(ctx, &locationList, client.MatchingFields{
+		healthCheckProfileIndexKey: profileName,
+	}, client.InNamespace(obj.GetNamespace()))
+
+	if err != nil {
+		logger.Error(err, "Failed to list locations for health check profile", "profileName", profileName)
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for _, location := range locationList.Items {
+		requests = append(requests, reconcile.Request{
+			NamespacedName: client.ObjectKey{
+				Name:      location.Name,
+				Namespace: location.Namespace,
+			},
+		})
+	}
+
+	return requests
 }
 
 func buildNodeAlertDefinitions(location *infrastructurev1alpha1.Location) map[string][]infrastructurev1alpha1.PrometheusAlertMatcherSpec {
