@@ -62,6 +62,8 @@ func (r *LocationHealthcheckController) Reconcile(ctx context.Context, req ctrl.
 		err := r.Client.Get(ctx, client.ObjectKey{Namespace: loc.Namespace, Name: nodeGroup.HealthCheck.Name}, hcp)
 		if err == nil {
 			referencedHcps = append(referencedHcps, *hcp)
+		} else {
+			log.Error(err, "unable to fetch HealthCheckProfile for node group. HealthCheck won't activate", "nodeGroup", nodeGroup.Name, "healthCheckProfile", nodeGroup.HealthCheck.Name)
 		}
 	}
 
@@ -191,6 +193,11 @@ func (r *LocationHealthcheckController) SetupWithManager(mgr ctrl.Manager) error
 	promManager, err := healthchecker.NewPrometheusManager(r.Prometheus, r.HandleAlertChangeFunc)
 	if err != nil {
 		return err
+	}
+	if promManager != nil {
+		if err := mgr.Add(promManager); err != nil {
+			return err
+		}
 	}
 
 	locationManager := healthchecker.NewLocationManager(r.HandleChangeFunc, r.HandleSpecChange, promManager)

@@ -37,7 +37,7 @@ func (l *LocationManager) LocationKey(namespace string, name string) string {
 
 func (l *LocationManager) AddLocation(location *infrastructurev1alpha1.Location, healthCheckProfiles *[]infrastructurev1alpha1.HealthCheckProfile) {
 
-	logf.Log.Info("Adding location", "location", l.LocationKey(location.Namespace, location.Name), "healthCheckProfiles", healthCheckProfiles)
+	logf.Log.Info("Adding location", "location", l.LocationKey(location.Namespace, location.Name))
 
 	marshallable := struct {
 		LocationSpec        infrastructurev1alpha1.LocationSpec
@@ -77,9 +77,6 @@ func (l *LocationManager) RemoveLocation(location types.NamespacedName) {
 
 func (l *LocationManager) loop() {
 	for op := range l.opsCh {
-
-		logf.Log.Info("Received operation for location manager", "action", op.action, "key", op.key, "location", op.location, "healthcheckProfiles", op.healthCheckProfiles)
-
 		switch op.action {
 		case "add":
 			l.mu.Lock()
@@ -118,6 +115,11 @@ func (l *LocationManager) loop() {
 			}
 
 			for _, nodeGroup := range op.location.Spec.NodeGroups {
+
+				if nodeGroup.HealthCheck == nil {
+					continue
+				}
+
 				for _, node := range nodeGroup.Nodes {
 					nodeCheckList := &NodeCheckList{
 						Name:        node.Name,

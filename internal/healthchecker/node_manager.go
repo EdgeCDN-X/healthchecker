@@ -39,19 +39,28 @@ func (nm *NodeManager) StartHealthChecks(nodeKey string, locationName string) {
 
 	logf.Log.Info("Starting health checks for node", "key", nodeKey, "location", locationName)
 
-	logf.Log.Info("Number of checks for node", "key", nodeKey, "location", locationName, "count", len(nodeCheckList.Checks))
-
 	for _, check := range nodeCheckList.Checks {
 		ctx, cancel := context.WithCancel(context.Background())
 		nodeCheckList.CancelFuncs = append(nodeCheckList.CancelFuncs, cancel)
 
 		go func() {
 			// Initial random delay to avoid thundering herd
-
 			logf.Log.Info("Initial random delay before starting health checks", "key", nodeKey, "location", locationName)
 
-			sleepDuration := time.Duration(1+rand.Intn(int(check.Interval.Duration.Seconds()))) * time.Second
-			time.Sleep(sleepDuration)
+			if check.Interval.Duration <= 0 {
+				logf.Log.Error(nil, "Invalid health check interval", "key", nodeKey, "location", locationName)
+				return
+			}
+
+			sleepDuration := time.Duration(rand.Int63n(int64(check.Interval.Duration)))
+			sleeptimer := time.NewTimer(sleepDuration)
+			select {
+			case <-sleeptimer.C:
+			case <-ctx.Done():
+				logf.Log.Info("Health check initial sleep canceled", "key", nodeKey, "location", locationName)
+				sleeptimer.Stop()
+				return
+			}
 
 			ticker := time.NewTicker(check.Interval.Duration)
 			defer ticker.Stop()
@@ -79,7 +88,11 @@ func (nm *NodeManager) StartHealthChecks(nodeKey string, locationName string) {
 						nm.changeFunc(nodeCheckList, nm.location, oldCode, newCode)
 						logf.Log.Info("Health status changed for node", "key", nodeKey, "oldCode", oldCode, "newCode", newCode, "location", locationName)
 					}
-					counter++
+					if counter == int(^uint(0)>>1) {
+						counter = 0
+					} else {
+						counter++
+					}
 				case <-ctx.Done():
 					logf.Log.Info("Stopping health checks for node", "key", nodeKey, "location", locationName)
 					return

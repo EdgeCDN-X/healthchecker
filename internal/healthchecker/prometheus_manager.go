@@ -1,6 +1,7 @@
 package healthchecker
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -39,6 +40,7 @@ type PrometheusManager struct {
 	locations  map[string]*infrastructurev1alpha1.Location
 	lastHashes map[string]string
 	stopCh     chan struct{}
+	stopOnce   sync.Once
 }
 
 type prometheusQueryResponse struct {
@@ -88,8 +90,22 @@ func NewPrometheusManager(config PrometheusConfig, alertChangeFunc AlertChangeFu
 		},
 	}
 
-	go pm.loop()
 	return pm, nil
+}
+
+func (p *PrometheusManager) Start(ctx context.Context) error {
+	go p.loop(ctx)
+	return nil
+}
+
+func (p *PrometheusManager) Stop() {
+	if p == nil {
+		return
+	}
+
+	p.stopOnce.Do(func() {
+		close(p.stopCh)
+	})
 }
 
 func (p *PrometheusManager) AddLocation(location *infrastructurev1alpha1.Location) {
@@ -115,7 +131,7 @@ func (p *PrometheusManager) RemoveLocation(location types.NamespacedName) {
 	p.mu.Unlock()
 }
 
-func (p *PrometheusManager) loop() {
+func (p *PrometheusManager) loop(ctx context.Context) {
 	ticker := time.NewTicker(p.config.Interval)
 	defer ticker.Stop()
 
@@ -127,6 +143,8 @@ func (p *PrometheusManager) loop() {
 		select {
 		case <-ticker.C:
 		case <-p.stopCh:
+			return
+		case <-ctx.Done():
 			return
 		}
 	}
