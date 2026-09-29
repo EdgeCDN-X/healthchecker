@@ -3,7 +3,7 @@ module github.com/EdgeCDN-X/healthchecker.git
 go 1.25.0
 
 require (
-	github.com/EdgeCDN-X/edgecdnx-controller v0.33.0
+	github.com/EdgeCDN-X/edgecdnx-controller v0.34.0
 	k8s.io/apimachinery v0.35.2
 	k8s.io/client-go v0.35.2
 	sigs.k8s.io/controller-runtime v0.23.3
@@ -74,4 +74,4 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/EdgeCDN-X/edgecdnx-controller => ../edgecdnx-controller
+// replace github.com/EdgeCDN-X/edgecdnx-controller => ../edgecdnx-controller
