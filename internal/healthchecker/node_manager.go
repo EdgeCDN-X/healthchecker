@@ -83,6 +83,7 @@ func (nm *NodeManager) StartHealthChecks(nodeKey string, locationName string) {
 				case <-ticker.C:
 					ctx, span := otel.Tracer(otelName).Start(ctx, "healthcheck.probe", trace.WithSpanKind(trace.SpanKindClient))
 					span.SetAttributes(
+						// Set Attribute version, v1
 						attribute.String("healthcheck.name", check.Name),
 						attribute.String("healthcheck.type", string(check.Type)),
 						attribute.String("healthcheck.protocol", check.Protocol),
@@ -110,7 +111,7 @@ func (nm *NodeManager) StartHealthChecks(nodeKey string, locationName string) {
 					}
 
 					if ologger != nil {
-						ologger.Info("healthcheck", "node", nodeKey, "location", locationName, "code", newCode, "oldCode", oldCode, "message", message, "alive", alive, "duration", duration, "type", string(check.Type), "name", check.Name, "target", check.Target, "error", hcerr)
+						ologger.Info("healthcheck", "v", "1", "node", nodeKey, "location", locationName, "code", newCode, "oldCode", oldCode, "message", message, "alive", alive, "duration", duration, "type", string(check.Type), "name", check.Name, "target", check.Target, "error", hcerr)
 					}
 
 					check.LastRetCode = newCode
