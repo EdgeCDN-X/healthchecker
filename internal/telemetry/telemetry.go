@@ -45,27 +45,27 @@ func SetupOtelSDK(ctx context.Context) (func(context.Context) error, error) {
 		err = errors.Join(inErr, shutdown(ctx))
 	}
 
-	// Set up propagator.
-	prop := newPropagator()
-	otel.SetTextMapPropagator(prop)
+	if os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") != "" || os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
+		prop := newPropagator()
+		otel.SetTextMapPropagator(prop)
 
-	sampler, err := samplerFromConfig(os.Getenv("OTEL_TRACES_SAMPLER"), os.Getenv("OTEL_TRACES_SAMPLER_ARG"))
-	if err != nil {
-		handleErr(err)
-		return shutdown, err
-	}
+		sampler, err := samplerFromConfig(os.Getenv("OTEL_TRACES_SAMPLER"), os.Getenv("OTEL_TRACES_SAMPLER_ARG"))
+		if err != nil {
+			handleErr(err)
+			return shutdown, err
+		}
 
-	// Set up trace provider.
-	tracerProvider, err := newTracerProvider(ctx, sampler)
-	if err != nil {
-		handleErr(err)
-		return shutdown, err
+		tracerProvider, err := newTracerProvider(ctx, sampler)
+		if err != nil {
+			handleErr(err)
+			return shutdown, err
+		}
+		shutdownFuncs = append(shutdownFuncs, tracerProvider.Shutdown)
+		otel.SetTracerProvider(tracerProvider)
 	}
-	shutdownFuncs = append(shutdownFuncs, tracerProvider.Shutdown)
-	otel.SetTracerProvider(tracerProvider)
 
 	// Set up log export only when an explicit logs endpoint is configured.
-	if os.Getenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT") != "" {
+	if os.Getenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT") != "" || os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
 		loggerProvider, err := newLoggerProvider(ctx)
 		if err != nil {
 			handleErr(err)

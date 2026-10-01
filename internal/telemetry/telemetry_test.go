@@ -1,11 +1,27 @@
 package telemetry
 
 import (
+	"context"
 	"testing"
 
 	"go.opentelemetry.io/otel/sdk/trace"
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
+
+func TestSetupOtelSDKSkipsTracingWithoutEndpoint(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
+	t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "")
+	t.Setenv("OTEL_TRACES_SAMPLER", "invalid")
+	t.Setenv("OTEL_TRACES_SAMPLER_ARG", "invalid")
+
+	shutdown, err := SetupOtelSDK(context.Background())
+	if err != nil {
+		t.Fatalf("SetupOtelSDK() error = %v", err)
+	}
+	if err := shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown() error = %v", err)
+	}
+}
 
 func TestSamplerFromConfig(t *testing.T) {
 	tests := []struct {
