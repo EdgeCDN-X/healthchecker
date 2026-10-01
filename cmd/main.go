@@ -16,6 +16,7 @@ import (
 	infrastructurev1alpha1 "github.com/EdgeCDN-X/edgecdnx-controller/api/v1alpha1"
 	"github.com/EdgeCDN-X/healthchecker.git/internal/controller"
 	"github.com/EdgeCDN-X/healthchecker.git/internal/healthchecker"
+	"github.com/EdgeCDN-X/healthchecker.git/internal/telemetry"
 )
 
 var (
@@ -52,6 +53,19 @@ func main() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(infrastructurev1alpha1.AddToScheme(scheme))
 
+	ctx := ctrl.SetupSignalHandler()
+
+	// Initialize OpenTelemetry SDK
+	shutdownOtel, err := telemetry.SetupOtelSDK(ctx)
+	if err != nil {
+		log.Fatalf("unable to set up OpenTelemetry SDK: %v", err)
+	}
+	defer func() {
+		if err := shutdownOtel(ctx); err != nil {
+			log.Printf("error shutting down OpenTelemetry SDK: %v", err)
+		}
+	}()
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		HealthProbeBindAddress: probeAddr,
@@ -87,7 +101,7 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
