@@ -8,12 +8,17 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	infrastructurev1alpha1 "github.com/EdgeCDN-X/edgecdnx-controller/api/v1alpha1"
 	"go.opentelemetry.io/contrib/bridges/otelslog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -38,7 +43,10 @@ func (nm *NodeManager) StartHealthChecks(nodeKey string, locationName string) {
 		return
 	}
 
-	ologger := otelslog.NewLogger("healthchecker")
+	var ologger *slog.Logger
+	if os.Getenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT") != "" {
+		ologger = otelslog.NewLogger("healthchecker")
+	}
 
 	logf.Log.Info("Starting health checks for node", "key", nodeKey, "location", locationName)
 
@@ -73,12 +81,37 @@ func (nm *NodeManager) StartHealthChecks(nodeKey string, locationName string) {
 			for {
 				select {
 				case <-ticker.C:
+					ctx, span := otel.Tracer(otelName).Start(ctx, "healthcheck.probe", trace.WithSpanKind(trace.SpanKindClient))
+					span.SetAttributes(
+						attribute.String("healthcheck.name", check.Name),
+						attribute.String("healthcheck.type", string(check.Type)),
+						attribute.String("healthcheck.protocol", check.Protocol),
+						attribute.String("healthcheck.target", check.Target),
+						attribute.Int("healthcheck.port", int(check.Port)),
+						attribute.String("healthcheck.stack", string(check.Stack)),
+						attribute.String("node.name", nodeKey),
+						attribute.String("location.name", locationName),
+					)
+
 					oldCode := check.LastRetCode
 					start := time.Now()
-					newCode, message, alive, hcerr := check.HealthCheck()
+					newCode, message, alive, hcerr := check.HealthCheck(ctx)
 					duration := time.Since(start)
+					span.SetAttributes(
+						attribute.Int("healthcheck.previous_code", oldCode),
+						attribute.Int("healthcheck.code", newCode),
+						attribute.Bool("healthcheck.alive", alive),
+						attribute.String("healthcheck.message", message),
+						attribute.Float64("healthcheck.duration_ms", float64(duration)/float64(time.Millisecond)),
+					)
+					if hcerr != nil {
+						span.RecordError(hcerr)
+						span.SetStatus(codes.Error, message)
+					}
 
-					ologger.Info("healthcheck", "node", nodeKey, "location", locationName, "code", newCode, "oldCode", oldCode, "message", message, "alive", alive, "duration", duration, "type", string(check.Type), "name", check.Name, "target", check.Target, "error", hcerr)
+					if ologger != nil {
+						ologger.Info("healthcheck", "node", nodeKey, "location", locationName, "code", newCode, "oldCode", oldCode, "message", message, "alive", alive, "duration", duration, "type", string(check.Type), "name", check.Name, "target", check.Target, "error", hcerr)
+					}
 
 					check.LastRetCode = newCode
 					check.LastRetMessage = message
@@ -86,6 +119,7 @@ func (nm *NodeManager) StartHealthChecks(nodeKey string, locationName string) {
 					check.Alive = alive
 
 					if err := ctx.Err(); err != nil {
+						span.End()
 						logf.Log.Info("Health check context canceled", "key", nodeKey, "location", locationName)
 						return
 					}
@@ -93,9 +127,15 @@ func (nm *NodeManager) StartHealthChecks(nodeKey string, locationName string) {
 					logf.Log.V(1).Info("Health check for node", "location", locationName, "key", nodeKey, "code", newCode, "oldCode", oldCode, "message", message, "alive", alive, "counter", counter)
 
 					if oldCode != newCode {
+						span.AddEvent("healthcheck.status_changed", trace.WithAttributes(
+							attribute.Int("healthcheck.previous_code", oldCode),
+							attribute.Int("healthcheck.code", newCode),
+							attribute.Bool("healthcheck.alive", alive),
+						))
 						nm.changeFunc(nodeCheckList, nm.location, oldCode, newCode)
 						logf.Log.Info("Health status changed for node", "key", nodeKey, "oldCode", oldCode, "newCode", newCode, "location", locationName)
 					}
+					span.End()
 					if counter == int(^uint(0)>>1) {
 						counter = 0
 					} else {
@@ -139,11 +179,9 @@ type NodeCheck struct {
 	LastRetCode    int
 	LastCheckTime  time.Time
 	LastRetMessage string
-
-	otelLogger *slog.Logger
 }
 
-func (check *NodeCheck) healthCheckHTTP() (int, string, bool, error) {
+func (check *NodeCheck) healthCheckHTTP(ctx context.Context) (int, string, bool, error) {
 	protocol := strings.ToLower(check.Protocol)
 
 	if protocol != "http" && protocol != "https" {
@@ -199,7 +237,7 @@ func (check *NodeCheck) healthCheckHTTP() (int, string, bool, error) {
 
 	fmt.Printf("Health check URL: %s\n", url)
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return -1, err.Error(), false, err
 	}
@@ -216,7 +254,7 @@ func (check *NodeCheck) healthCheckHTTP() (int, string, bool, error) {
 	}
 }
 
-func (check *NodeCheck) healthCheckTCP() (int, string, bool, error) {
+func (check *NodeCheck) healthCheckTCP(ctx context.Context) (int, string, bool, error) {
 	dialNetwork := "tcp"
 	if check.Stack == infrastructurev1alpha1.StackTypeIPv4 {
 		dialNetwork = "tcp4"
@@ -227,7 +265,7 @@ func (check *NodeCheck) healthCheckTCP() (int, string, bool, error) {
 
 	target := net.JoinHostPort(check.Target, fmt.Sprintf("%d", check.Port))
 
-	conn, err := (&net.Dialer{Timeout: check.Timeout.Duration}).Dial(dialNetwork, target)
+	conn, err := (&net.Dialer{Timeout: check.Timeout.Duration}).DialContext(ctx, dialNetwork, target)
 	if err != nil {
 		return -1, err.Error(), false, err
 	}
@@ -236,16 +274,16 @@ func (check *NodeCheck) healthCheckTCP() (int, string, bool, error) {
 	return 200, "Healthy", true, nil
 }
 
-func (check *NodeCheck) HealthCheck() (int, string, bool, error) {
+func (check *NodeCheck) HealthCheck(ctx context.Context) (int, string, bool, error) {
 	logf.Log.Info("Starting health check", "check", check)
 
 	switch check.Type {
 	case infrastructurev1alpha1.HealthCheckProbeTypeASSUME:
 		return 200, "Healthy", true, nil
 	case infrastructurev1alpha1.HealthCheckProbeTypeHTTP:
-		return check.healthCheckHTTP()
+		return check.healthCheckHTTP(ctx)
 	case infrastructurev1alpha1.HealthCheckProbeTypeTCP:
-		return check.healthCheckTCP()
+		return check.healthCheckTCP(ctx)
 	}
 
 	return -1, "Unknown Check Type", false, fmt.Errorf("unknown check type: %v", check.Type)
