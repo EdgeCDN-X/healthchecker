@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -111,7 +112,7 @@ func (nm *NodeManager) StartHealthChecks(nodeKey string, locationName string) {
 					}
 
 					if ologger != nil {
-						ologger.Info("healthcheck", "v", "1", "node", nodeKey, "location", locationName, "code", newCode, "oldCode", oldCode, "message", message, "alive", alive, "duration", duration, "type", string(check.Type), "name", check.Name, "target", check.Target, "error", hcerr)
+						ologger.Info(fmt.Sprintf("healthcheck alive: %s", strconv.FormatBool(alive)), "v", "1", "start", start, "node", nodeKey, "location", locationName, "code", newCode, "oldCode", oldCode, "message", message, "alive", alive, "duration", duration, "type", string(check.Type), "name", check.Name, "target", check.Target, "error", hcerr)
 					}
 
 					check.LastRetCode = newCode
