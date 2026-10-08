@@ -281,6 +281,9 @@ func (check *NodeCheck) HealthCheck(ctx context.Context) (int, string, bool, err
 
 	switch check.Type {
 	case infrastructurev1alpha1.HealthCheckProbeTypeASSUME:
+		if check.Target == "Unhealthy" {
+			return -1, "Unhealthy", false, fmt.Errorf("assume check marked as unhealthy")
+		}
 		return 200, "Healthy", true, nil
 	case infrastructurev1alpha1.HealthCheckProbeTypeHTTP:
 		return check.healthCheckHTTP(ctx)
