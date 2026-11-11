@@ -136,7 +136,13 @@ func (l *LocationManager) loop() {
 										break
 									}
 
-									if probe.HTTP.Stack == infrastructurev1alpha1.StackTypeDual {
+									// Probes without an explicit stack cover every stack the node supports.
+									httpStack := probe.HTTP.Stack
+									if httpStack == "" {
+										httpStack = infrastructurev1alpha1.StackTypeDual
+									}
+
+									if httpStack == infrastructurev1alpha1.StackTypeDual {
 										for _, stack := range []infrastructurev1alpha1.StackType{infrastructurev1alpha1.StackTypeIPv4, infrastructurev1alpha1.StackTypeIPv6} {
 											if stack == infrastructurev1alpha1.StackTypeIPv4 && node.Ipv4 == "" || stack == infrastructurev1alpha1.StackTypeIPv6 && node.Ipv6 == "" {
 												logf.Log.Info("Skipping stack due to missing IP", "stack", stack, "node", node.Name)
@@ -176,11 +182,11 @@ func (l *LocationManager) loop() {
 									} else {
 										target := ""
 
-										if probe.HTTP.Stack == infrastructurev1alpha1.StackTypeIPv4 {
+										if httpStack == infrastructurev1alpha1.StackTypeIPv4 {
 											target = node.Ipv4
 										}
 
-										if probe.HTTP.Stack == infrastructurev1alpha1.StackTypeIPv6 {
+										if httpStack == infrastructurev1alpha1.StackTypeIPv6 {
 											target = node.Ipv6
 										}
 
@@ -191,7 +197,7 @@ func (l *LocationManager) loop() {
 										nodeCheck := &NodeCheck{
 											Name:  probe.Name,
 											Type:  probe.Type,
-											Stack: probe.HTTP.Stack,
+											Stack: httpStack,
 											// HTTP(s) Specific Fields
 											Protocol: probe.HTTP.Protocol,
 											Host:     probe.HTTP.Host,
@@ -212,7 +218,13 @@ func (l *LocationManager) loop() {
 										break
 									}
 
-									if probe.TCP.Stack == infrastructurev1alpha1.StackTypeDual {
+									// Probes without an explicit stack cover every stack the node supports.
+									tcpStack := probe.TCP.Stack
+									if tcpStack == "" {
+										tcpStack = infrastructurev1alpha1.StackTypeDual
+									}
+
+									if tcpStack == infrastructurev1alpha1.StackTypeDual {
 										for _, stack := range []infrastructurev1alpha1.StackType{infrastructurev1alpha1.StackTypeIPv4, infrastructurev1alpha1.StackTypeIPv6} {
 											if stack == infrastructurev1alpha1.StackTypeIPv4 && node.Ipv4 == "" || stack == infrastructurev1alpha1.StackTypeIPv6 && node.Ipv6 == "" {
 												logf.Log.Info("Skipping stack due to missing IP", "stack", stack, "node", node.Name)
@@ -244,10 +256,10 @@ func (l *LocationManager) loop() {
 									} else {
 										target := ""
 
-										if probe.TCP.Stack == infrastructurev1alpha1.StackTypeIPv4 {
+										if tcpStack == infrastructurev1alpha1.StackTypeIPv4 {
 											target = node.Ipv4
 										}
-										if probe.TCP.Stack == infrastructurev1alpha1.StackTypeIPv6 {
+										if tcpStack == infrastructurev1alpha1.StackTypeIPv6 {
 											target = node.Ipv6
 										}
 										if probe.TCP.Target != "" {
@@ -257,7 +269,7 @@ func (l *LocationManager) loop() {
 										nodeCheck := &NodeCheck{
 											Name:     probe.Name,
 											Type:     probe.Type,
-											Stack:    probe.TCP.Stack,
+											Stack:    tcpStack,
 											Target:   target,
 											Port:     probe.TCP.Port,
 											Interval: probe.Interval,
@@ -273,7 +285,13 @@ func (l *LocationManager) loop() {
 										break
 									}
 
-									if probe.Assume.Stack == infrastructurev1alpha1.StackTypeDual {
+									// Probes without an explicit stack cover every stack the node supports.
+									assumeStack := probe.Assume.Stack
+									if assumeStack == "" {
+										assumeStack = infrastructurev1alpha1.StackTypeDual
+									}
+
+									if assumeStack == infrastructurev1alpha1.StackTypeDual {
 										for _, stack := range []infrastructurev1alpha1.StackType{infrastructurev1alpha1.StackTypeIPv4, infrastructurev1alpha1.StackTypeIPv6} {
 											nodeCheck := &NodeCheck{
 												Name:     probe.Name,
@@ -290,7 +308,7 @@ func (l *LocationManager) loop() {
 										nodeCheck := &NodeCheck{
 											Name:     probe.Name,
 											Type:     probe.Type,
-											Stack:    probe.Assume.Stack,
+											Stack:    assumeStack,
 											Target:   string(probe.Assume.Status),
 											Interval: probe.Interval,
 											Timeout:  probe.Timeout,
