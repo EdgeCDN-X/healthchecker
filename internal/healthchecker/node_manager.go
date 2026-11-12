@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +51,10 @@ func (nm *NodeManager) StartHealthChecks(nodeKey string, locationName string) {
 	logf.Log.Info("Starting health checks for node", "key", nodeKey, "location", locationName)
 
 	for _, check := range nodeCheckList.Checks {
+		check.SuccessThreshold = max(1, nodeCheckList.SuccessThreshold)
+		check.FailureThreshold = max(1, nodeCheckList.FailureThreshold)
+	}
+	for _, check := range nodeCheckList.Checks {
 		ctx, cancel := context.WithCancel(context.Background())
 		nodeCheckList.CancelFuncs = append(nodeCheckList.CancelFuncs, cancel)
 
@@ -84,7 +87,6 @@ func (nm *NodeManager) StartHealthChecks(nodeKey string, locationName string) {
 				case <-ticker.C:
 					ctx, span := otel.Tracer(otelName).Start(ctx, "healthcheck.probe", trace.WithSpanKind(trace.SpanKindClient))
 					span.SetAttributes(
-						// Set Attribute version, v1
 						attribute.String("healthcheck.name", check.Name),
 						attribute.String("healthcheck.type", string(check.Type)),
 						attribute.String("healthcheck.protocol", check.Protocol),
@@ -95,14 +97,30 @@ func (nm *NodeManager) StartHealthChecks(nodeKey string, locationName string) {
 						attribute.String("location.name", locationName),
 					)
 
+					nodeCheckList.mu.Lock()
 					oldCode := check.LastRetCode
+					nodeCheckList.mu.Unlock()
 					start := time.Now()
 					newCode, message, alive, hcerr := check.HealthCheck(ctx)
 					duration := time.Since(start)
+					if err := ctx.Err(); err != nil {
+						span.End()
+						logf.Log.Info("Health check context canceled", "key", nodeKey, "location", locationName)
+						return
+					}
+
+					nodeCheckList.mu.Lock()
+					changed := check.applyResult(newCode, message, alive)
 					span.SetAttributes(
 						attribute.Int("healthcheck.previous_code", oldCode),
 						attribute.Int("healthcheck.code", newCode),
 						attribute.Bool("healthcheck.alive", alive),
+						attribute.Bool("healthcheck.effective_alive", check.Alive),
+						attribute.Int("healthcheck.success_threshold", int(check.SuccessThreshold)),
+						attribute.Int("healthcheck.failure_threshold", int(check.FailureThreshold)),
+						attribute.Int("healthcheck.consecutive_successes", int(check.consecutiveSuccesses)),
+						attribute.Int("healthcheck.consecutive_failures", int(check.consecutiveFailures)),
+						attribute.Bool("healthcheck.threshold_pending", !check.initialized || alive != check.Alive),
 						attribute.String("healthcheck.message", message),
 						attribute.Float64("healthcheck.duration_ms", float64(duration)/float64(time.Millisecond)),
 					)
@@ -112,31 +130,21 @@ func (nm *NodeManager) StartHealthChecks(nodeKey string, locationName string) {
 					}
 
 					if ologger != nil {
-						ologger.Info(fmt.Sprintf("healthcheck alive: %s", strconv.FormatBool(alive)), "v", "1", "start", start, "node", nodeKey, "location", locationName, "code", newCode, "oldCode", oldCode, "message", message, "alive", alive, "duration", duration, "type", string(check.Type), "name", check.Name, "target", check.Target, "error", hcerr)
-					}
-
-					check.LastRetCode = newCode
-					check.LastRetMessage = message
-					check.LastCheckTime = time.Now()
-					check.Alive = alive
-
-					if err := ctx.Err(); err != nil {
-						span.End()
-						logf.Log.Info("Health check context canceled", "key", nodeKey, "location", locationName)
-						return
+						check.logResult(ctx, ologger, start, duration, nodeKey, locationName, oldCode, newCode, message, alive, hcerr)
 					}
 
 					logf.Log.V(1).Info("Health check for node", "location", locationName, "key", nodeKey, "code", newCode, "oldCode", oldCode, "message", message, "alive", alive, "counter", counter)
 
-					if oldCode != newCode {
+					if changed {
 						span.AddEvent("healthcheck.status_changed", trace.WithAttributes(
 							attribute.Int("healthcheck.previous_code", oldCode),
 							attribute.Int("healthcheck.code", newCode),
-							attribute.Bool("healthcheck.alive", alive),
+							attribute.Bool("healthcheck.alive", check.Alive),
 						))
-						nm.changeFunc(nodeCheckList, nm.location, oldCode, newCode)
-						logf.Log.Info("Health status changed for node", "key", nodeKey, "oldCode", oldCode, "newCode", newCode, "location", locationName)
+						nm.changeFunc(nodeCheckList, nm.location, oldCode, check.LastRetCode)
+						logf.Log.Info("Health status changed for node", "key", nodeKey, "oldCode", oldCode, "newCode", check.LastRetCode, "location", locationName)
 					}
+					nodeCheckList.mu.Unlock()
 					span.End()
 					if counter == int(^uint(0)>>1) {
 						counter = 0
@@ -154,10 +162,12 @@ func (nm *NodeManager) StartHealthChecks(nodeKey string, locationName string) {
 }
 
 type NodeCheckList struct {
-	Name        string
-	Checks      []*NodeCheck
-	CancelFuncs []context.CancelFunc
-	mu          sync.Mutex
+	Name             string
+	Checks           []*NodeCheck
+	CancelFuncs      []context.CancelFunc
+	mu               sync.Mutex
+	SuccessThreshold int32
+	FailureThreshold int32
 }
 
 type NodeCheck struct {
@@ -174,13 +184,60 @@ type NodeCheck struct {
 	Target string
 	Port   int32
 
-	Timeout  metav1.Duration
-	Interval metav1.Duration
+	Timeout          metav1.Duration
+	Interval         metav1.Duration
+	SuccessThreshold int32
+	FailureThreshold int32
+
+	consecutiveSuccesses int32
+	consecutiveFailures  int32
+	initialized          bool
 
 	Alive          bool
 	LastRetCode    int
 	LastCheckTime  time.Time
 	LastRetMessage string
+}
+
+func (check *NodeCheck) applyResult(code int, message string, alive bool) bool {
+	check.LastCheckTime = time.Now()
+	successThreshold := max(1, check.SuccessThreshold)
+	failureThreshold := max(1, check.FailureThreshold)
+	reached := false
+	if alive {
+		check.consecutiveFailures = 0
+		if check.consecutiveSuccesses < successThreshold {
+			check.consecutiveSuccesses++
+		}
+		reached = check.consecutiveSuccesses >= successThreshold
+	} else {
+		check.consecutiveSuccesses = 0
+		if check.consecutiveFailures < failureThreshold {
+			check.consecutiveFailures++
+		}
+		reached = check.consecutiveFailures >= failureThreshold
+	}
+	if !reached {
+		return false
+	}
+	changed := !check.initialized || check.Alive != alive || check.LastRetCode != code
+	check.initialized = true
+	check.Alive = alive
+	check.LastRetCode = code
+	check.LastRetMessage = message
+	return changed
+}
+
+func (check *NodeCheck) logResult(ctx context.Context, logger *slog.Logger, start time.Time, duration time.Duration, node, location string, oldCode, code int, message string, alive bool, err error) {
+	logger.InfoContext(ctx, fmt.Sprintf("healthcheck alive: %t", alive),
+		"v", "2", "start", start, "node", node, "location", location,
+		"code", code, "oldCode", oldCode, "message", message, "alive", alive,
+		"duration", duration, "type", string(check.Type), "name", check.Name,
+		"target", check.Target, "stack", string(check.Stack), "error", err,
+		"effectiveAlive", check.Alive,
+		"successThreshold", max(1, check.SuccessThreshold), "failureThreshold", max(1, check.FailureThreshold),
+		"consecutiveSuccesses", check.consecutiveSuccesses, "consecutiveFailures", check.consecutiveFailures,
+		"thresholdPending", !check.initialized || alive != check.Alive)
 }
 
 func (check *NodeCheck) healthCheckHTTP(ctx context.Context) (int, string, bool, error) {
@@ -277,7 +334,7 @@ func (check *NodeCheck) healthCheckTCP(ctx context.Context) (int, string, bool, 
 }
 
 func (check *NodeCheck) HealthCheck(ctx context.Context) (int, string, bool, error) {
-	logf.Log.Info("Starting health check", "check", check)
+	logf.Log.Info("Starting health check", "name", check.Name, "type", check.Type, "target", check.Target)
 
 	switch check.Type {
 	case infrastructurev1alpha1.HealthCheckProbeTypeASSUME:

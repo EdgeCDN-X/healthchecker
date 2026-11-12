@@ -129,6 +129,8 @@ func (l *LocationManager) loop() {
 
 					for _, healthCheckProfile := range *op.healthCheckProfiles {
 						if nodeGroup.HealthCheck.Name == healthCheckProfile.Name {
+							nodeCheckList.SuccessThreshold = max(1, healthCheckProfile.Spec.SuccessThreshold)
+							nodeCheckList.FailureThreshold = max(1, healthCheckProfile.Spec.FailureThreshold)
 							for _, probe := range healthCheckProfile.Spec.Probes {
 								switch probe.Type {
 								case infrastructurev1alpha1.HealthCheckProbeTypeHTTP:

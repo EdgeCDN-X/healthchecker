@@ -47,3 +47,5 @@ dist/
 
 secure-urls
 cookies
+
+.envrc

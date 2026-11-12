@@ -3,7 +3,7 @@ module github.com/EdgeCDN-X/healthchecker.git
 go 1.25.0
 
 require (
-	github.com/EdgeCDN-X/edgecdnx-controller v1.2.1
+	github.com/EdgeCDN-X/edgecdnx-controller v1.3.0
 	go.opentelemetry.io/contrib/bridges/otelslog v0.20.1
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.22.0
@@ -12,6 +12,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.46.0
 	go.opentelemetry.io/otel/sdk/log v0.22.0
 	go.opentelemetry.io/otel/trace v1.46.0
+	k8s.io/api v0.35.2
 	k8s.io/apimachinery v0.35.2
 	k8s.io/client-go v0.35.2
 	sigs.k8s.io/controller-runtime v0.23.3
@@ -81,7 +82,6 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	k8s.io/api v0.35.2 // indirect
 	k8s.io/apiextensions-apiserver v0.35.2 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260317180543-43fb72c5454a // indirect
