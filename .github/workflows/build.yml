@@ -22,13 +22,13 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64        # native
+          platforms: linux/amd64
           push: true
           tags: |
             fr6nco/healthchecker:amd64-${{ github.ref_name }}
 
   build-arm64:
-    runs-on: ubuntu-24.04-arm           # <-- real ARM runner, no QEMU!!!
+    runs-on: ubuntu-24.04-arm
 
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +41,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/arm64         # native ARM64
+          platforms: linux/arm64
           push: true
           tags: |
             fr6nco/healthchecker:arm64-${{ github.ref_name }}
@@ -60,17 +60,15 @@ jobs:
 
       - name: Create & push manifest
         run: |
-          docker manifest create fr6nco/healthchecker:${{ github.ref_name }} \
-            --amend fr6nco/healthchecker:amd64-${{ github.ref_name }} \
-            --amend fr6nco/healthchecker:arm64-${{ github.ref_name }}
-
-          docker manifest push fr6nco/healthchecker:${{ github.ref_name }}
+          docker buildx imagetools create \
+            --tag fr6nco/healthchecker:${{ github.ref_name }} \
+            fr6nco/healthchecker:amd64-${{ github.ref_name }} \
+            fr6nco/healthchecker:arm64-${{ github.ref_name }}
 
       - name: Push :latest manifest
         if: ${{ github.ref_name == 'main' }}
         run: |
-          docker manifest create fr6nco/healthchecker:latest \
-            --amend fr6nco/healthchecker:amd64-main \
-            --amend fr6nco/healthchecker:arm64-main
-
-          docker manifest push fr6nco/healthchecker:latest
+          docker buildx imagetools create \
+            --tag fr6nco/healthchecker:latest \
+            fr6nco/healthchecker:amd64-main \
+            fr6nco/healthchecker:arm64-main
