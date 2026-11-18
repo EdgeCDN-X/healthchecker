@@ -146,19 +146,29 @@ func (l *LocationManager) loop() {
 
 									if httpStack == infrastructurev1alpha1.StackTypeDual {
 										for _, stack := range []infrastructurev1alpha1.StackType{infrastructurev1alpha1.StackTypeIPv4, infrastructurev1alpha1.StackTypeIPv6} {
-											if stack == infrastructurev1alpha1.StackTypeIPv4 && node.Ipv4 == "" || stack == infrastructurev1alpha1.StackTypeIPv6 && node.Ipv6 == "" {
-												logf.Log.Info("Skipping stack due to missing IP", "stack", stack, "node", node.Name)
+											if (stack == infrastructurev1alpha1.StackTypeIPv4 && node.Ipv4 == "" && node.Cname == "") || (stack == infrastructurev1alpha1.StackTypeIPv6 && node.Ipv6 == "" && node.Cname == "") {
+												logf.Log.Info("Skipping stack due to missing IP or CNAME", "stack", stack, "node", node.Name)
 												continue
 											}
 
 											target := ""
 
 											if stack == infrastructurev1alpha1.StackTypeIPv4 {
-												target = node.Ipv4
+												// Prefers IPv4 address over CNAME if available
+												if node.Ipv4 == "" {
+													target = node.Cname
+												} else {
+													target = node.Ipv4
+												}
 											}
 
 											if stack == infrastructurev1alpha1.StackTypeIPv6 {
-												target = node.Ipv6
+												// Prefers IPv6 address over CNAME if available
+												if node.Ipv6 == "" {
+													target = node.Cname
+												} else {
+													target = node.Ipv6
+												}
 											}
 
 											if probe.HTTP.Target != "" {
@@ -183,13 +193,21 @@ func (l *LocationManager) loop() {
 										}
 									} else {
 										target := ""
-
+										// Prefers IP address over CNAME if available
 										if httpStack == infrastructurev1alpha1.StackTypeIPv4 {
-											target = node.Ipv4
+											if node.Ipv4 == "" {
+												target = node.Cname
+											} else {
+												target = node.Ipv4
+											}
 										}
 
 										if httpStack == infrastructurev1alpha1.StackTypeIPv6 {
-											target = node.Ipv6
+											if node.Ipv6 == "" {
+												target = node.Cname
+											} else {
+												target = node.Ipv6
+											}
 										}
 
 										if probe.HTTP.Target != "" {
@@ -228,17 +246,25 @@ func (l *LocationManager) loop() {
 
 									if tcpStack == infrastructurev1alpha1.StackTypeDual {
 										for _, stack := range []infrastructurev1alpha1.StackType{infrastructurev1alpha1.StackTypeIPv4, infrastructurev1alpha1.StackTypeIPv6} {
-											if stack == infrastructurev1alpha1.StackTypeIPv4 && node.Ipv4 == "" || stack == infrastructurev1alpha1.StackTypeIPv6 && node.Ipv6 == "" {
-												logf.Log.Info("Skipping stack due to missing IP", "stack", stack, "node", node.Name)
+											if (stack == infrastructurev1alpha1.StackTypeIPv4 && node.Ipv4 == "" && node.Cname == "") || (stack == infrastructurev1alpha1.StackTypeIPv6 && node.Ipv6 == "" && node.Cname == "") {
+												logf.Log.Info("Skipping stack due to missing IP or CNAME", "stack", stack, "node", node.Name)
 												continue
 											}
 
 											target := ""
 											if stack == infrastructurev1alpha1.StackTypeIPv4 {
-												target = node.Ipv4
+												if node.Ipv4 == "" {
+													target = node.Cname
+												} else {
+													target = node.Ipv4
+												}
 											}
 											if stack == infrastructurev1alpha1.StackTypeIPv6 {
-												target = node.Ipv6
+												if node.Ipv6 == "" {
+													target = node.Cname
+												} else {
+													target = node.Ipv6
+												}
 											}
 											if probe.TCP.Target != "" {
 												target = probe.TCP.Target
@@ -259,10 +285,18 @@ func (l *LocationManager) loop() {
 										target := ""
 
 										if tcpStack == infrastructurev1alpha1.StackTypeIPv4 {
-											target = node.Ipv4
+											if node.Ipv4 == "" {
+												target = node.Cname
+											} else {
+												target = node.Ipv4
+											}
 										}
 										if tcpStack == infrastructurev1alpha1.StackTypeIPv6 {
-											target = node.Ipv6
+											if node.Ipv6 == "" {
+												target = node.Cname
+											} else {
+												target = node.Ipv6
+											}
 										}
 										if probe.TCP.Target != "" {
 											target = probe.TCP.Target
