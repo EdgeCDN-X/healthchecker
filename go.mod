@@ -3,7 +3,7 @@ module github.com/EdgeCDN-X/healthchecker.git
 go 1.26.0
 
 require (
-	github.com/EdgeCDN-X/edgecdnx-controller v1.4.1-0.20261118153301-07629b06cb1f
+	github.com/EdgeCDN-X/edgecdnx-controller v1.4.1-0.20261118222034-756ea702d06f
 	go.opentelemetry.io/contrib/bridges/otelslog v0.20.1
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.22.0

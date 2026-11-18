@@ -146,8 +146,9 @@ func (l *LocationManager) loop() {
 
 									if httpStack == infrastructurev1alpha1.StackTypeDual {
 										for _, stack := range []infrastructurev1alpha1.StackType{infrastructurev1alpha1.StackTypeIPv4, infrastructurev1alpha1.StackTypeIPv6} {
-											if (stack == infrastructurev1alpha1.StackTypeIPv4 && node.Ipv4 == "" && node.Cname == "") || (stack == infrastructurev1alpha1.StackTypeIPv6 && node.Ipv6 == "" && node.Cname == "") {
-												logf.Log.Info("Skipping stack due to missing IP or CNAME", "stack", stack, "node", node.Name)
+											if (stack == infrastructurev1alpha1.StackTypeIPv4 && node.Ipv4 == "" && node.Cname == "" && op.location.Spec.BaseDomain == "") ||
+												(stack == infrastructurev1alpha1.StackTypeIPv6 && node.Ipv6 == "" && node.Cname == "" && op.location.Spec.BaseDomain == "") {
+												logf.Log.Info("Skipping stack due to missing IP, CNAME or BaseDomain", "stack", stack, "node", node.Name, "location", op.location.Name)
 												continue
 											}
 
@@ -156,7 +157,15 @@ func (l *LocationManager) loop() {
 											if stack == infrastructurev1alpha1.StackTypeIPv4 {
 												// Prefers IPv4 address over CNAME if available
 												if node.Ipv4 == "" {
-													target = node.Cname
+													if node.Cname == "" {
+														// strip trailing dot if present
+														target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
+														if strings.HasSuffix(target, ".") {
+															target = target[:len(target)-1]
+														}
+													} else {
+														target = node.Cname
+													}
 												} else {
 													target = node.Ipv4
 												}
@@ -165,7 +174,15 @@ func (l *LocationManager) loop() {
 											if stack == infrastructurev1alpha1.StackTypeIPv6 {
 												// Prefers IPv6 address over CNAME if available
 												if node.Ipv6 == "" {
-													target = node.Cname
+													if node.Cname == "" {
+														// strip trailing dot if present
+														target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
+														if strings.HasSuffix(target, ".") {
+															target = target[:len(target)-1]
+														}
+													} else {
+														target = node.Cname
+													}
 												} else {
 													target = node.Ipv6
 												}
@@ -196,7 +213,14 @@ func (l *LocationManager) loop() {
 										// Prefers IP address over CNAME if available
 										if httpStack == infrastructurev1alpha1.StackTypeIPv4 {
 											if node.Ipv4 == "" {
-												target = node.Cname
+												if node.Cname == "" {
+													target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
+													if strings.HasSuffix(target, ".") {
+														target = target[:len(target)-1]
+													}
+												} else {
+													target = node.Cname
+												}
 											} else {
 												target = node.Ipv4
 											}
@@ -204,7 +228,14 @@ func (l *LocationManager) loop() {
 
 										if httpStack == infrastructurev1alpha1.StackTypeIPv6 {
 											if node.Ipv6 == "" {
-												target = node.Cname
+												if node.Cname == "" {
+													target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
+													if strings.HasSuffix(target, ".") {
+														target = target[:len(target)-1]
+													}
+												} else {
+													target = node.Cname
+												}
 											} else {
 												target = node.Ipv6
 											}
@@ -254,14 +285,24 @@ func (l *LocationManager) loop() {
 											target := ""
 											if stack == infrastructurev1alpha1.StackTypeIPv4 {
 												if node.Ipv4 == "" {
-													target = node.Cname
+													target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
+													if strings.HasSuffix(target, ".") {
+														target = target[:len(target)-1]
+													}
 												} else {
-													target = node.Ipv4
+													target = node.Cname
 												}
 											}
 											if stack == infrastructurev1alpha1.StackTypeIPv6 {
 												if node.Ipv6 == "" {
-													target = node.Cname
+													if node.Cname == "" {
+														target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
+														if strings.HasSuffix(target, ".") {
+															target = target[:len(target)-1]
+														}
+													} else {
+														target = node.Cname
+													}
 												} else {
 													target = node.Ipv6
 												}
@@ -286,14 +327,28 @@ func (l *LocationManager) loop() {
 
 										if tcpStack == infrastructurev1alpha1.StackTypeIPv4 {
 											if node.Ipv4 == "" {
-												target = node.Cname
+												if node.Cname == "" {
+													target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
+													if strings.HasSuffix(target, ".") {
+														target = target[:len(target)-1]
+													}
+												} else {
+													target = node.Cname
+												}
 											} else {
 												target = node.Ipv4
 											}
 										}
 										if tcpStack == infrastructurev1alpha1.StackTypeIPv6 {
 											if node.Ipv6 == "" {
-												target = node.Cname
+												if node.Cname == "" {
+													target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
+													if strings.HasSuffix(target, ".") {
+														target = target[:len(target)-1]
+													}
+												} else {
+													target = node.Cname
+												}
 											} else {
 												target = node.Ipv6
 											}
@@ -361,6 +416,7 @@ func (l *LocationManager) loop() {
 					}
 
 					logf.Log.Info("Adding node check list for node", "key", nm.NodeKey(&node), "location", op.key, "checks", len(nodeCheckList.Checks))
+					logf.Log.V(1).Info("Node check list details", "key", nm.NodeKey(&node), "location", op.key, "checks", nodeCheckList.Checks)
 
 					l.nodeManagers[op.key].nodeCheckList[nm.NodeKey(&node)] = nodeCheckList
 					l.nodeManagers[op.key].StartHealthChecks(nm.NodeKey(&node), op.key)
