@@ -212,6 +212,12 @@ func (l *LocationManager) loop() {
 										target := ""
 										// Prefers IP address over CNAME if available
 										if httpStack == infrastructurev1alpha1.StackTypeIPv4 {
+
+											if node.Ipv4 == "" && node.Cname == "" && op.location.Spec.BaseDomain == "" {
+												logf.Log.Info("Skipping IPv4 stack due to missing IP, CNAME, and BaseDomain on Probe", "node", node.Name, "location", op.location.Name, "probe", probe.Name)
+												continue
+											}
+
 											if node.Ipv4 == "" {
 												if node.Cname == "" {
 													target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
@@ -227,6 +233,12 @@ func (l *LocationManager) loop() {
 										}
 
 										if httpStack == infrastructurev1alpha1.StackTypeIPv6 {
+
+											if node.Ipv6 == "" && node.Cname == "" && op.location.Spec.BaseDomain == "" {
+												logf.Log.Info("Skipping IPv6 stack due to missing IP, CNAME, and BaseDomain on Probe", "node", node.Name, "location", op.location.Name, "probe", probe.Name)
+												continue
+											}
+
 											if node.Ipv6 == "" {
 												if node.Cname == "" {
 													target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
@@ -277,8 +289,8 @@ func (l *LocationManager) loop() {
 
 									if tcpStack == infrastructurev1alpha1.StackTypeDual {
 										for _, stack := range []infrastructurev1alpha1.StackType{infrastructurev1alpha1.StackTypeIPv4, infrastructurev1alpha1.StackTypeIPv6} {
-											if (stack == infrastructurev1alpha1.StackTypeIPv4 && node.Ipv4 == "" && node.Cname == "") || (stack == infrastructurev1alpha1.StackTypeIPv6 && node.Ipv6 == "" && node.Cname == "") {
-												logf.Log.Info("Skipping stack due to missing IP or CNAME", "stack", stack, "node", node.Name)
+											if (stack == infrastructurev1alpha1.StackTypeIPv4 && node.Ipv4 == "" && node.Cname == "" && op.location.Spec.BaseDomain == "") || (stack == infrastructurev1alpha1.StackTypeIPv6 && node.Ipv6 == "" && node.Cname == "" && op.location.Spec.BaseDomain == "") {
+												logf.Log.Info("Skipping stack due to missing IP, CNAME, and BaseDomain", "stack", stack, "node", node.Name, "location", op.location.Name)
 												continue
 											}
 
@@ -326,6 +338,12 @@ func (l *LocationManager) loop() {
 										target := ""
 
 										if tcpStack == infrastructurev1alpha1.StackTypeIPv4 {
+
+											if node.Ipv4 == "" && node.Cname == "" && op.location.Spec.BaseDomain == "" {
+												logf.Log.Info("Skipping IPv4 stack due to missing IP, CNAME, and BaseDomain on Probe", "node", node.Name, "location", op.location.Name, "probe", probe.Name)
+												continue
+											}
+
 											if node.Ipv4 == "" {
 												if node.Cname == "" {
 													target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
@@ -340,6 +358,12 @@ func (l *LocationManager) loop() {
 											}
 										}
 										if tcpStack == infrastructurev1alpha1.StackTypeIPv6 {
+
+											if node.Ipv6 == "" && node.Cname == "" && op.location.Spec.BaseDomain == "" {
+												logf.Log.Info("Skipping IPv6 stack due to missing IP, CNAME, and BaseDomain on Probe", "node", node.Name, "location", op.location.Name, "probe", probe.Name)
+												continue
+											}
+
 											if node.Ipv6 == "" {
 												if node.Cname == "" {
 													target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
