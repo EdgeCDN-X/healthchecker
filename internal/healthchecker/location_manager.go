@@ -159,7 +159,7 @@ func (l *LocationManager) loop() {
 												if node.Ipv4 == "" {
 													if node.Cname == "" {
 														// strip trailing dot if present
-														target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
+														target = fmt.Sprintf("%s.%s.%s.%s", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
 														if strings.HasSuffix(target, ".") {
 															target = target[:len(target)-1]
 														}
@@ -176,7 +176,7 @@ func (l *LocationManager) loop() {
 												if node.Ipv6 == "" {
 													if node.Cname == "" {
 														// strip trailing dot if present
-														target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
+														target = fmt.Sprintf("%s.%s.%s.%s", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
 														if strings.HasSuffix(target, ".") {
 															target = target[:len(target)-1]
 														}
@@ -220,7 +220,7 @@ func (l *LocationManager) loop() {
 
 											if node.Ipv4 == "" {
 												if node.Cname == "" {
-													target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
+													target = fmt.Sprintf("%s.%s.%s.%s", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
 													if strings.HasSuffix(target, ".") {
 														target = target[:len(target)-1]
 													}
@@ -241,7 +241,7 @@ func (l *LocationManager) loop() {
 
 											if node.Ipv6 == "" {
 												if node.Cname == "" {
-													target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
+													target = fmt.Sprintf("%s.%s.%s.%s", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
 													if strings.HasSuffix(target, ".") {
 														target = target[:len(target)-1]
 													}
@@ -297,7 +297,7 @@ func (l *LocationManager) loop() {
 											target := ""
 											if stack == infrastructurev1alpha1.StackTypeIPv4 {
 												if node.Ipv4 == "" {
-													target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
+													target = fmt.Sprintf("%s.%s.%s.%s", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
 													if strings.HasSuffix(target, ".") {
 														target = target[:len(target)-1]
 													}
@@ -308,7 +308,7 @@ func (l *LocationManager) loop() {
 											if stack == infrastructurev1alpha1.StackTypeIPv6 {
 												if node.Ipv6 == "" {
 													if node.Cname == "" {
-														target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
+														target = fmt.Sprintf("%s.%s.%s.%s", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
 														if strings.HasSuffix(target, ".") {
 															target = target[:len(target)-1]
 														}
@@ -346,7 +346,7 @@ func (l *LocationManager) loop() {
 
 											if node.Ipv4 == "" {
 												if node.Cname == "" {
-													target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
+													target = fmt.Sprintf("%s.%s.%s.%s", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
 													if strings.HasSuffix(target, ".") {
 														target = target[:len(target)-1]
 													}
@@ -366,7 +366,7 @@ func (l *LocationManager) loop() {
 
 											if node.Ipv6 == "" {
 												if node.Cname == "" {
-													target = fmt.Sprintf("%s.%s.%s.%s.", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
+													target = fmt.Sprintf("%s.%s.%s.%s", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
 													if strings.HasSuffix(target, ".") {
 														target = target[:len(target)-1]
 													}
