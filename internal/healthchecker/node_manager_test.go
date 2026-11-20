@@ -50,6 +50,68 @@ func TestResolveHealthCheckTarget(t *testing.T) {
 	}
 }
 
+func TestLocationUsesOnlyNodeGroupProfiles(t *testing.T) {
+	location := &infrastructurev1alpha1.Location{
+		ObjectMeta: metav1.ObjectMeta{Name: "location", Namespace: "tenant"},
+		Spec: infrastructurev1alpha1.LocationSpec{NodeGroups: []infrastructurev1alpha1.NodeGroupSpec{
+			{Name: "group", HealthCheck: &corev1.LocalObjectReference{Name: "group-profile"}, Nodes: []infrastructurev1alpha1.NodeSpec{
+				{Name: "inherited"},
+				{Name: "overridden", HealthCheck: &corev1.LocalObjectReference{Name: "node-profile"}},
+				{Name: "disabled", HealthCheck: &corev1.LocalObjectReference{}},
+			}},
+			{Name: "node-only", Nodes: []infrastructurev1alpha1.NodeSpec{
+				{Name: "standalone", HealthCheck: &corev1.LocalObjectReference{Name: "node-profile"}},
+				{Name: "unconfigured"},
+			}},
+		}},
+	}
+	profiles := []infrastructurev1alpha1.HealthCheckProfile{}
+	for i, name := range []string{"group-profile", "node-profile"} {
+		profiles = append(profiles, infrastructurev1alpha1.HealthCheckProfile{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec: infrastructurev1alpha1.HealthCheckProfileSpec{
+				SuccessThreshold: int32(i + 2), FailureThreshold: int32(i + 3),
+				Probes: []infrastructurev1alpha1.HealthCheckProbeSpec{{
+					Name: name, Type: infrastructurev1alpha1.HealthCheckProbeTypeHTTP,
+					Interval: metav1.Duration{Duration: time.Hour},
+					HTTP:     &infrastructurev1alpha1.HTTPHealthCheckProbeSpec{Target: name + ".example"},
+				}},
+			},
+		})
+	}
+	manager := &LocationManager{
+		nodeManagers: make(map[string]*NodeManager), opsCh: make(chan locationManagerOps, 1),
+		changeFunc: func(*NodeCheckList, *infrastructurev1alpha1.Location, int, int) {},
+	}
+	manager.AddLocation(location, &profiles)
+	close(manager.opsCh)
+	manager.loop()
+	checks := manager.nodeManagers["tenant/location"].nodeCheckList
+	if len(checks) != 3 {
+		t.Fatalf("checks = %v, want exactly the three nodes in the configured group", checks)
+	}
+	for _, tc := range []struct {
+		node, profile    string
+		success, failure int32
+	}{
+		{"inherited", "group-profile", 2, 3},
+		{"overridden", "group-profile", 2, 3},
+		{"disabled", "group-profile", 2, 3},
+	} {
+		list := checks[tc.node]
+		if list == nil || len(list.Checks) != 2 {
+			t.Fatalf("%s: expected two default-stack checks, got %+v", tc.node, list)
+		}
+		for i, stack := range []infrastructurev1alpha1.StackType{infrastructurev1alpha1.StackTypeIPv4, infrastructurev1alpha1.StackTypeIPv6} {
+			check := list.Checks[i]
+			if check.Name != tc.profile || check.Target != tc.profile+".example" || check.Stack != stack ||
+				check.SuccessThreshold != tc.success || check.FailureThreshold != tc.failure {
+				t.Fatalf("%s: unexpected check %+v", tc.node, check)
+			}
+		}
+	}
+}
+
 func TestLocationProfileThresholdsGateCallbacks(t *testing.T) {
 	var probes atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
