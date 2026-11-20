@@ -19,6 +19,37 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+func TestResolveHealthCheckTarget(t *testing.T) {
+	tests := []struct {
+		name        string
+		node        infrastructurev1alpha1.NodeSpec
+		stack       infrastructurev1alpha1.StackType
+		baseDomain  string
+		probeTarget string
+		want        string
+		wantOK      bool
+	}{
+		{name: "IPv4 preferred over CNAME and base domain", node: infrastructurev1alpha1.NodeSpec{Name: "node", Ipv4: "192.0.2.10", Cname: "node.example.com"}, stack: infrastructurev1alpha1.StackTypeIPv4, baseDomain: "edge.example.com", want: "192.0.2.10", wantOK: true},
+		{name: "IPv6 preferred over CNAME and base domain", node: infrastructurev1alpha1.NodeSpec{Name: "node", Ipv6: "2001:db8::10", Cname: "node.example.com"}, stack: infrastructurev1alpha1.StackTypeIPv6, baseDomain: "edge.example.com", want: "2001:db8::10", wantOK: true},
+		{name: "CNAME preferred for IPv4 when IP is missing", node: infrastructurev1alpha1.NodeSpec{Name: "node", Cname: "node.example.com"}, stack: infrastructurev1alpha1.StackTypeIPv4, baseDomain: "edge.example.com", want: "node.example.com", wantOK: true},
+		{name: "CNAME preferred for IPv6 when IP is missing", node: infrastructurev1alpha1.NodeSpec{Name: "node", Cname: "node.example.com"}, stack: infrastructurev1alpha1.StackTypeIPv6, baseDomain: "edge.example.com", want: "node.example.com", wantOK: true},
+		{name: "IPv4 base domain fallback", node: infrastructurev1alpha1.NodeSpec{Name: "node"}, stack: infrastructurev1alpha1.StackTypeIPv4, baseDomain: "edge.example.com", want: "node.cache.location.edge.example.com", wantOK: true},
+		{name: "IPv6 base domain fallback with trailing dot", node: infrastructurev1alpha1.NodeSpec{Name: "node"}, stack: infrastructurev1alpha1.StackTypeIPv6, baseDomain: "edge.example.com.", want: "node.cache.location.edge.example.com", wantOK: true},
+		{name: "explicit target without node address", node: infrastructurev1alpha1.NodeSpec{Name: "node"}, stack: infrastructurev1alpha1.StackTypeIPv4, probeTarget: "health.example.com", want: "health.example.com", wantOK: true},
+		{name: "no target sources", node: infrastructurev1alpha1.NodeSpec{Name: "node"}, stack: infrastructurev1alpha1.StackTypeIPv4, wantOK: false},
+		{name: "unsupported stack", node: infrastructurev1alpha1.NodeSpec{Name: "node", Cname: "node.example.com"}, stack: infrastructurev1alpha1.StackTypeDual, wantOK: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := resolveHealthCheckTarget(&tt.node, "cache", "location", tt.baseDomain, tt.stack, tt.probeTarget)
+			if ok != tt.wantOK || got != tt.want {
+				t.Fatalf("resolveHealthCheckTarget() = (%q, %t), want (%q, %t)", got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
 func TestLocationProfileThresholdsGateCallbacks(t *testing.T) {
 	var probes atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

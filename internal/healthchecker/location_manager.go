@@ -146,50 +146,10 @@ func (l *LocationManager) loop() {
 
 									if httpStack == infrastructurev1alpha1.StackTypeDual {
 										for _, stack := range []infrastructurev1alpha1.StackType{infrastructurev1alpha1.StackTypeIPv4, infrastructurev1alpha1.StackTypeIPv6} {
-											if (stack == infrastructurev1alpha1.StackTypeIPv4 && node.Ipv4 == "" && node.Cname == "" && op.location.Spec.BaseDomain == "") ||
-												(stack == infrastructurev1alpha1.StackTypeIPv6 && node.Ipv6 == "" && node.Cname == "" && op.location.Spec.BaseDomain == "") {
-												logf.Log.Info("Skipping stack due to missing IP, CNAME or BaseDomain", "stack", stack, "node", node.Name, "location", op.location.Name)
+											target, ok := resolveHealthCheckTarget(&node, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain, stack, probe.HTTP.Target)
+											if !ok {
+												logf.Log.Info("Skipping stack due to missing target IP, CNAME or BaseDomain", "stack", stack, "node", node.Name, "location", op.location.Name)
 												continue
-											}
-
-											target := ""
-
-											if stack == infrastructurev1alpha1.StackTypeIPv4 {
-												// Prefers IPv4 address over CNAME if available
-												if node.Ipv4 == "" {
-													if node.Cname == "" {
-														// strip trailing dot if present
-														target = fmt.Sprintf("%s.%s.%s.%s", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
-														if strings.HasSuffix(target, ".") {
-															target = target[:len(target)-1]
-														}
-													} else {
-														target = node.Cname
-													}
-												} else {
-													target = node.Ipv4
-												}
-											}
-
-											if stack == infrastructurev1alpha1.StackTypeIPv6 {
-												// Prefers IPv6 address over CNAME if available
-												if node.Ipv6 == "" {
-													if node.Cname == "" {
-														// strip trailing dot if present
-														target = fmt.Sprintf("%s.%s.%s.%s", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
-														if strings.HasSuffix(target, ".") {
-															target = target[:len(target)-1]
-														}
-													} else {
-														target = node.Cname
-													}
-												} else {
-													target = node.Ipv6
-												}
-											}
-
-											if probe.HTTP.Target != "" {
-												target = probe.HTTP.Target
 											}
 
 											nodeCheck := &NodeCheck{
@@ -209,52 +169,10 @@ func (l *LocationManager) loop() {
 											nodeCheckList.Checks = append(nodeCheckList.Checks, nodeCheck)
 										}
 									} else {
-										target := ""
-										// Prefers IP address over CNAME if available
-										if httpStack == infrastructurev1alpha1.StackTypeIPv4 {
-
-											if node.Ipv4 == "" && node.Cname == "" && op.location.Spec.BaseDomain == "" {
-												logf.Log.Info("Skipping IPv4 stack due to missing IP, CNAME, and BaseDomain on Probe", "node", node.Name, "location", op.location.Name, "probe", probe.Name)
-												continue
-											}
-
-											if node.Ipv4 == "" {
-												if node.Cname == "" {
-													target = fmt.Sprintf("%s.%s.%s.%s", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
-													if strings.HasSuffix(target, ".") {
-														target = target[:len(target)-1]
-													}
-												} else {
-													target = node.Cname
-												}
-											} else {
-												target = node.Ipv4
-											}
-										}
-
-										if httpStack == infrastructurev1alpha1.StackTypeIPv6 {
-
-											if node.Ipv6 == "" && node.Cname == "" && op.location.Spec.BaseDomain == "" {
-												logf.Log.Info("Skipping IPv6 stack due to missing IP, CNAME, and BaseDomain on Probe", "node", node.Name, "location", op.location.Name, "probe", probe.Name)
-												continue
-											}
-
-											if node.Ipv6 == "" {
-												if node.Cname == "" {
-													target = fmt.Sprintf("%s.%s.%s.%s", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
-													if strings.HasSuffix(target, ".") {
-														target = target[:len(target)-1]
-													}
-												} else {
-													target = node.Cname
-												}
-											} else {
-												target = node.Ipv6
-											}
-										}
-
-										if probe.HTTP.Target != "" {
-											target = probe.HTTP.Target
+										target, ok := resolveHealthCheckTarget(&node, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain, httpStack, probe.HTTP.Target)
+										if !ok {
+											logf.Log.Info("Skipping stack due to missing IP, CNAME, and BaseDomain on Probe", "stack", httpStack, "node", node.Name, "location", op.location.Name, "probe", probe.Name)
+											continue
 										}
 
 										nodeCheck := &NodeCheck{
@@ -289,38 +207,10 @@ func (l *LocationManager) loop() {
 
 									if tcpStack == infrastructurev1alpha1.StackTypeDual {
 										for _, stack := range []infrastructurev1alpha1.StackType{infrastructurev1alpha1.StackTypeIPv4, infrastructurev1alpha1.StackTypeIPv6} {
-											if (stack == infrastructurev1alpha1.StackTypeIPv4 && node.Ipv4 == "" && node.Cname == "" && op.location.Spec.BaseDomain == "") || (stack == infrastructurev1alpha1.StackTypeIPv6 && node.Ipv6 == "" && node.Cname == "" && op.location.Spec.BaseDomain == "") {
+											target, ok := resolveHealthCheckTarget(&node, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain, stack, probe.TCP.Target)
+											if !ok {
 												logf.Log.Info("Skipping stack due to missing IP, CNAME, and BaseDomain", "stack", stack, "node", node.Name, "location", op.location.Name)
 												continue
-											}
-
-											target := ""
-											if stack == infrastructurev1alpha1.StackTypeIPv4 {
-												if node.Ipv4 == "" {
-													target = fmt.Sprintf("%s.%s.%s.%s", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
-													if strings.HasSuffix(target, ".") {
-														target = target[:len(target)-1]
-													}
-												} else {
-													target = node.Cname
-												}
-											}
-											if stack == infrastructurev1alpha1.StackTypeIPv6 {
-												if node.Ipv6 == "" {
-													if node.Cname == "" {
-														target = fmt.Sprintf("%s.%s.%s.%s", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
-														if strings.HasSuffix(target, ".") {
-															target = target[:len(target)-1]
-														}
-													} else {
-														target = node.Cname
-													}
-												} else {
-													target = node.Ipv6
-												}
-											}
-											if probe.TCP.Target != "" {
-												target = probe.TCP.Target
 											}
 
 											nodeCheck := &NodeCheck{
@@ -335,50 +225,10 @@ func (l *LocationManager) loop() {
 											nodeCheckList.Checks = append(nodeCheckList.Checks, nodeCheck)
 										}
 									} else {
-										target := ""
-
-										if tcpStack == infrastructurev1alpha1.StackTypeIPv4 {
-
-											if node.Ipv4 == "" && node.Cname == "" && op.location.Spec.BaseDomain == "" {
-												logf.Log.Info("Skipping IPv4 stack due to missing IP, CNAME, and BaseDomain on Probe", "node", node.Name, "location", op.location.Name, "probe", probe.Name)
-												continue
-											}
-
-											if node.Ipv4 == "" {
-												if node.Cname == "" {
-													target = fmt.Sprintf("%s.%s.%s.%s", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
-													if strings.HasSuffix(target, ".") {
-														target = target[:len(target)-1]
-													}
-												} else {
-													target = node.Cname
-												}
-											} else {
-												target = node.Ipv4
-											}
-										}
-										if tcpStack == infrastructurev1alpha1.StackTypeIPv6 {
-
-											if node.Ipv6 == "" && node.Cname == "" && op.location.Spec.BaseDomain == "" {
-												logf.Log.Info("Skipping IPv6 stack due to missing IP, CNAME, and BaseDomain on Probe", "node", node.Name, "location", op.location.Name, "probe", probe.Name)
-												continue
-											}
-
-											if node.Ipv6 == "" {
-												if node.Cname == "" {
-													target = fmt.Sprintf("%s.%s.%s.%s", node.Name, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain)
-													if strings.HasSuffix(target, ".") {
-														target = target[:len(target)-1]
-													}
-												} else {
-													target = node.Cname
-												}
-											} else {
-												target = node.Ipv6
-											}
-										}
-										if probe.TCP.Target != "" {
-											target = probe.TCP.Target
+										target, ok := resolveHealthCheckTarget(&node, nodeGroup.Name, op.location.Name, op.location.Spec.BaseDomain, tcpStack, probe.TCP.Target)
+										if !ok {
+											logf.Log.Info("Skipping stack due to missing IP, CNAME, and BaseDomain on Probe", "stack", tcpStack, "node", node.Name, "location", op.location.Name, "probe", probe.Name)
+											continue
 										}
 
 										nodeCheck := &NodeCheck{
@@ -505,6 +355,39 @@ func NewLocationManager(changeFn func(nodeCheckList *NodeCheckList, location *in
 
 	go lm.loop()
 	return lm
+}
+
+func resolveHealthCheckTarget(node *infrastructurev1alpha1.NodeSpec, nodeGroupName, locationName, baseDomain string, stack infrastructurev1alpha1.StackType, probeTarget string) (string, bool) {
+	if probeTarget != "" {
+		return probeTarget, true
+	}
+
+	switch stack {
+	case infrastructurev1alpha1.StackTypeIPv4:
+		if node.Ipv4 != "" {
+			return node.Ipv4, true
+		}
+	case infrastructurev1alpha1.StackTypeIPv6:
+		if node.Ipv6 != "" {
+			return node.Ipv6, true
+		}
+	default:
+		return "", false
+	}
+
+	if node.Cname != "" {
+		return node.Cname, true
+	}
+
+	if baseDomain != "" {
+		target := fmt.Sprintf("%s.%s.%s.%s", node.Name, nodeGroupName, locationName, baseDomain)
+		target = strings.TrimSuffix(target, ".")
+		if target != "" {
+			return target, true
+		}
+	}
+
+	return "", false
 }
 
 func parseLocationKey(key string) types.NamespacedName {
